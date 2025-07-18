@@ -1,105 +1,90 @@
 import streamlit as st
 import sqlite3
+from datetime import datetime
 
 # --- Database Setup ---
 conn = sqlite3.connect('tasks.db', check_same_thread=False)
 cursor = conn.cursor()
-cursor.execute("""
+cursor.execute('''
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'Pending'
     )
-""")
+''')
 conn.commit()
 
-# --- Helper Functions ---
-def add_task(title):
-    cursor.execute("INSERT INTO tasks (title) VALUES (?)", (title,))
-    conn.commit()
+# --- App UI Setup ---
+st.set_page_config(page_title="📝 To-Do List App", layout="centered")
+st.title("📝 Elegant To-Do List")
 
+menu = ["All Tasks", "Pending Tasks", "Completed Tasks"]
+choice = st.sidebar.radio("View", menu)
+
+# --- Add New Task ---
+st.subheader("➕ Add New Task")
+new_task = st.text_input("Enter a task", placeholder="e.g., Buy groceries")
+if st.button("Add Task"):
+    if new_task.strip():
+        cursor.execute("INSERT INTO tasks (title, status) VALUES (?, 'Pending')", (new_task.strip(),))
+        conn.commit()
+        st.success("Task added successfully!")
+        st.experimental_rerun()
+
+# --- View Tasks ---
 def get_tasks():
     cursor.execute("SELECT * FROM tasks")
     return cursor.fetchall()
 
-def mark_done(task_id):
-    cursor.execute("UPDATE tasks SET status='Done' WHERE id=?", (task_id,))
+def update_status(task_id, new_status):
+    cursor.execute("UPDATE tasks SET status = ? WHERE id = ?", (new_status, task_id))
     conn.commit()
+    st.experimental_rerun()
 
 def delete_task(task_id):
-    cursor.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
     conn.commit()
+    st.experimental_rerun()
 
-# --- UI Styling ---
-st.set_page_config(page_title="Elegant To-Do App", layout="centered")
-st.markdown("""
-    <style>
-        .main-title {
-            font-size: 3em;
-            text-align: center;
-            margin-bottom: 20px;
-            color: #4A90E2;
-        }
-        .task-card {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 8px;
-            background-color: #f0f2f6;
-        }
-        .task-done {
-            background-color: #d4edda;
-            text-decoration: line-through;
-        }
-        .task-pending {
-            background-color: #fff3cd;
-        }
-        .task-title {
-            font-size: 18px;
-            font-weight: 500;
-        }
-    </style>
-""", unsafe_allow_html=True)
+all_tasks = get_tasks()
 
-st.markdown("<div class='main-title'>📝 Elegant To-Do List</div>", unsafe_allow_html=True)
+if choice == "All Tasks":
+    st.subheader("📋 All Tasks")
+    for idx, task in enumerate(all_tasks):
+        col1, col2, col3 = st.columns([6, 2, 2])
+        with col1:
+            st.write(f"{task[1]} ({task[2]})")
+        with col2:
+            if st.button("✅ Done" if task[2] == 'Pending' else "↩️ Undo", key=f"done_{task[0]}_{idx}"):
+                update_status(task[0], 'Done' if task[2] == 'Pending' else 'Pending')
+        with col3:
+            if st.button("🗑️ Delete", key=f"delete_{task[0]}_{idx}"):
+                delete_task(task[0])
 
-# --- Add Task ---
-with st.form("Add Task"):
-    task_input = st.text_input("Enter a task")
-    submitted = st.form_submit_button("Add")
-    if submitted and task_input:
-        add_task(task_input)
-        st.success("Task added successfully!")
-        st.experimental_rerun()
-
-# --- Task View Tabs ---
-tab_labels = ["All", "Pending", "Done"]
-tabs = st.tabs(tab_labels)
-tasks = get_tasks()
-
-for i, tab in enumerate(tabs):
-    with tab:
-        for idx, task in enumerate(tasks):
-            task_id, title, status = task
-
-            if tab_labels[i] == "Pending" and status != "Pending":
-                continue
-            if tab_labels[i] == "Done" and status != "Done":
-                continue
-
-            css_class = "task-done" if status == "Done" else "task-pending"
-            st.markdown(f"""
-                <div class='task-card {css_class}'>
-                    <span class='task-title'>{title}</span>
-                </div>
-            """, unsafe_allow_html=True)
-
-            col1, col2 = st.columns([1, 1])
+elif choice == "Pending Tasks":
+    st.subheader("🕓 Pending Tasks")
+    for idx, task in enumerate(all_tasks):
+        if task[2] == 'Pending':
+            col1, col2, col3 = st.columns([6, 2, 2])
             with col1:
-                if status != "Done":
-                    if st.button("✅ Mark Done", key=f"done_{task_id}_{tab_labels[i]}"):
-                        mark_done(task_id)
-                        st.experimental_rerun()
+                st.write(task[1])
             with col2:
-                if st.button("❌ Delete", key=f"delete_{task_id}_{tab_labels[i]}"):
-                    delete_task(task_id)
-                    st.experimental_rerun()
+                if st.button("✅ Done", key=f"done_pending_{task[0]}_{idx}"):
+                    update_status(task[0], 'Done')
+            with col3:
+                if st.button("🗑️ Delete", key=f"delete_pending_{task[0]}_{idx}"):
+                    delete_task(task[0])
+
+elif choice == "Completed Tasks":
+    st.subheader("✅ Completed Tasks")
+    for idx, task in enumerate(all_tasks):
+        if task[2] == 'Done':
+            col1, col2, col3 = st.columns([6, 2, 2])
+            with col1:
+                st.write(task[1])
+            with col2:
+                if st.button("↩️ Undo", key=f"undo_done_{task[0]}_{idx}"):
+                    update_status(task[0], 'Pending')
+            with col3:
+                if st.button("🗑️ Delete", key=f"delete_done_{task[0]}_{idx}"):
+                    delete_task(task[0])
