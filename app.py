@@ -1,53 +1,25 @@
 import streamlit as st
 import sqlite3
 
-# Page Setup
-st.set_page_config(page_title="🧠 Smart Tasks", page_icon="✅", layout="centered")
-
-# Connect DB
-conn = sqlite3.connect("todo.db", check_same_thread=False)
+# ----------------------- DB Functions -----------------------
+conn = sqlite3.connect('tasks.db', check_same_thread=False)
 c = conn.cursor()
-c.execute("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, task TEXT, status TEXT DEFAULT 'Pending')")
+
+c.execute('''
+    CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task TEXT NOT NULL,
+        status TEXT DEFAULT 'Pending'
+    )
+''')
 conn.commit()
 
-# Styling
-st.markdown("""
-    <style>
-        .task-card {
-            padding: 15px;
-            border-radius: 12px;
-            margin-bottom: 10px;
-            background: linear-gradient(to right, #f8fafc, #f1f5f9);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .task-done {
-            background: linear-gradient(to right, #d1fae5, #a7f3d0);
-            text-decoration: line-through;
-        }
-        .task-pending {
-            background: linear-gradient(to right, #fef9c3, #fde68a);
-        }
-        .task-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: #111827;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# Functions
 def add_task(task):
     c.execute("INSERT INTO tasks (task) VALUES (?)", (task,))
     conn.commit()
 
-def get_tasks(status_filter=None):
-    if status_filter:
-        c.execute("SELECT * FROM tasks WHERE status=?", (status_filter,))
-    else:
-        c.execute("SELECT * FROM tasks")
+def get_tasks():
+    c.execute("SELECT * FROM tasks")
     return c.fetchall()
 
 def mark_done(task_id):
@@ -58,62 +30,76 @@ def delete_task(task_id):
     c.execute("DELETE FROM tasks WHERE id=?", (task_id,))
     conn.commit()
 
-# Sidebar
-with st.sidebar:
-    st.title("📊 Task Summary")
-    total = len(get_tasks())
-    done = len(get_tasks("Done"))
-    pending = len(get_tasks("Pending"))
-    st.metric("Total", total)
-    st.metric("✅ Done", done)
-    st.metric("🔄 Pending", pending)
+# --------------------- Page Setup --------------------------
+st.set_page_config(page_title="📝 To-Do WebApp", layout="centered")
 
-# Title
-st.title("🧠 Smart Tasks")
-st.subheader("Manage your day like a pro.")
+# -------------------- Custom CSS Styling -------------------
+st.markdown("""
+    <style>
+        .title {
+            font-size: 42px;
+            font-weight: 800;
+            color: #333;
+            text-align: center;
+        }
+        .task-card {
+            background-color: #f2f2f2;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+        .task-done {
+            background-color: #d1e7dd !important;
+            color: #155724;
+            text-decoration: line-through;
+        }
+        .task-pending {
+            background-color: #fff3cd !important;
+            color: #856404;
+        }
+        .task-title {
+            font-size: 18px;
+            font-weight: 500;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-# Add Task
-with st.form("add_task"):
-    new_task = st.text_input("What's on your mind?")
-    submitted = st.form_submit_button("Add ➕")
+st.markdown('<div class="title">📋 My To-Do List</div>', unsafe_allow_html=True)
+st.markdown("### Add New Task:")
+
+# ------------------ Input Form ------------------
+with st.form("task_form", clear_on_submit=True):
+    new_task = st.text_input("Task", placeholder="Enter your task here...")
+    submitted = st.form_submit_button("➕ Add Task")
     if submitted and new_task.strip():
         add_task(new_task.strip())
-        st.success("Task added!")
+        st.success(f"Task added: {new_task}")
         st.rerun()
 
-# Tabs
-tab1, tab2, tab3 = st.tabs(["📋 All", "🔄 Pending", "✅ Done"])
+# ------------------ Display Tasks ------------------
+st.markdown("### 🗂️ Your Tasks:")
+tasks = get_tasks()
 
-def render_tasks(tasks):
-    for task in tasks:
-        bg_class = "task-card task-done" if task[2] == "Done" else "task-card task-pending"
+if tasks:
+    for i, task in enumerate(tasks):
+        task_id, task_text, task_status = task
+        bg_class = "task-card task-done" if task_status == "Done" else "task-card task-pending"
+        
         st.markdown(f"""
             <div class="{bg_class}">
-                <span class="task-title">{task[1]}</span>
-                <div>
-                    {'<button onclick="window.location.reload()" style="margin-right:10px">✅</button>' if task[2] != 'Done' else ''}
-                    <form action="" method="post" style="display:inline">
-                        <button style="background:red;color:white;border:none;border-radius:5px;" onclick="window.location.reload()">❌</button>
-                    </form>
-                </div>
+                <span class="task-title">{task_text}</span>
             </div>
         """, unsafe_allow_html=True)
+
         col1, col2 = st.columns([1, 1])
         with col1:
-            if task[2] != "Done":
-                if st.button("✅ Mark Done", key=f"done_{task[0]}"):
-                    mark_done(task[0])
+            if task_status != "Done":
+                if st.button("✅ Mark Done", key=f"done_{task_id}_{i}"):
+                    mark_done(task_id)
                     st.rerun()
         with col2:
-            if st.button("❌ Delete", key=f"del_{task[0]}"):
-                delete_task(task[0])
+            if st.button("❌ Delete", key=f"delete_{task_id}_{i}"):
+                delete_task(task_id)
                 st.rerun()
-
-with tab1:
-    render_tasks(get_tasks())
-
-with tab2:
-    render_tasks(get_tasks("Pending"))
-
-with tab3:
-    render_tasks(get_tasks("Done"))
+else:
+    st.info("🎉 No tasks yet! Add your first task above.")
